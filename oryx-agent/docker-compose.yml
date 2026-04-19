@@ -1,0 +1,9 @@
+services:
+  whisper:
+    build:
+      context: ./whisper-server
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
