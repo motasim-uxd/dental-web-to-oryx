@@ -760,6 +760,11 @@ export default function SchedulePage() {
       <p style={{ marginTop: 0, color: "#555" }}>
         This assistant books directly into Oryx (realm: <b>smilesquadpd</b>, service: <b>Cleaning</b>).
       </p>
+      <p style={{ marginTop: 8, color: "#666", fontSize: 14 }}>
+        Phone: configure GoHighLevel Voice AI on your tracking number; when the call ends, GHL posts the
+        transcript and extracted fields to <code>/api/ghl/webhook</code>, which creates the same Oryx online
+        request when date, time, and patient details are present.
+      </p>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", margin: "12px 0 16px" }}>
         <label style={{ display: "flex", gap: 8, alignItems: "center" }}>

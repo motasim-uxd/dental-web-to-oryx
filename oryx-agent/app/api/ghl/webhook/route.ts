@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { bookCleaningFromGhl } from "@/lib/ghlBooking";
+import { planOryxBookFromGhlVoiceBody } from "@/lib/ghlVoiceBook";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 function timingSafeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
@@ -29,23 +31,41 @@ function assertGhlAuth(req: Request) {
   return { ok: true as const };
 }
 
-const BodySchema = z.object({
-  // GHL payloads vary; accept anything and store minimally.
-  transcript: z.string().optional(),
-  text: z.string().optional(),
-  message: z.string().optional(),
-  contact: z.record(z.string(), z.unknown()).optional(),
-  conversationId: z.string().optional(),
-  callId: z.string().optional(),
-}).passthrough();
+/** Accept VoiceAiCallEnd-style payloads and custom workflow shapes. */
+const BodySchema = z
+  .object({
+    id: z.string().optional(),
+    locationId: z.string().optional(),
+    agentId: z.string().optional(),
+    contactId: z.string().optional(),
+    fromNumber: z.string().optional(),
+    summary: z.string().optional(),
+    transcript: z.string().optional(),
+    text: z.string().optional(),
+    message: z.string().optional(),
+    translation: z.record(z.string(), z.unknown()).optional(),
+    extractedData: z.record(z.string(), z.unknown()).optional(),
+    executedCallActions: z.array(z.unknown()).optional(),
+    contact: z.record(z.string(), z.unknown()).optional(),
+    conversationId: z.string().optional(),
+    callId: z.string().optional(),
+    oryx: z.record(z.string(), z.unknown()).optional(),
+    book: z.record(z.string(), z.unknown()).optional(),
+    customData: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
 
 /**
- * GHL inbound webhook (Transcript Generated).
+ * GHL inbound webhook: Voice AI call end / transcript → Oryx online request.
  *
- * Configure in GHL:
- * - URL: https://YOUR_PUBLIC_DOMAIN/api/ghl/webhook
- * - Method: POST
- * - Header: x-api-key: <same value as GHL_WEBHOOK_SECRET in .env.local>
+ * Configure GHL (Voice AI or workflow “Custom Webhook”) to POST here after the call:
+ * - URL: https://YOUR_DOMAIN/api/ghl/webhook
+ * - Header: x-api-key: <GHL_WEBHOOK_SECRET>
+ *
+ * Map Voice AI **data extraction** fields into `extractedData` (or send the same keys
+ * under `oryx` / `book`). See `planOryxBookFromGhlVoiceBody` in `lib/ghlVoiceBook.ts`.
+ *
+ * @see https://marketplace.gohighlevel.com/docs/webhook/VoiceAiCallEnd/index.html
  */
 export async function POST(req: Request) {
   const auth = assertGhlAuth(req);
@@ -53,8 +73,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: auth.error }, { status: 401 });
   }
 
-  const body = await req.json().catch(() => null);
-  const parsed = BodySchema.safeParse(body ?? {});
+  const raw = await req.json().catch(() => null);
+  const parsed = BodySchema.safeParse(raw ?? {});
   if (!parsed.success) {
     return NextResponse.json(
       { success: false, error: parsed.error.flatten() },
@@ -62,14 +82,47 @@ export async function POST(req: Request) {
     );
   }
 
-  // For now: acknowledge receipt. Next step is mapping GHL transcript fields -> Oryx booking.
+  const body = parsed.data as Record<string, unknown>;
+  const plan = planOryxBookFromGhlVoiceBody(body, process.env);
+
+  if (plan.mode === "skip") {
+    return NextResponse.json({
+      success: true,
+      booked: false,
+      reasons: plan.reasons,
+      preview: {
+        transcript: plan.transcript?.slice(0, 500) ?? null,
+        contactId: typeof body.contactId === "string" ? body.contactId : null,
+        callId: typeof body.id === "string" ? body.id : null,
+      },
+    });
+  }
+
+  const bookResult = await bookCleaningFromGhl(plan.input);
+  if (!bookResult.ok) {
+    return NextResponse.json(
+      {
+        success: true,
+        booked: false,
+        error: bookResult.error,
+        alternatives: bookResult.status === 409 ? bookResult.alternatives : undefined,
+        preview: {
+          serviceDateISO: plan.input.serviceDateISO,
+          startHHMM: plan.input.startHHMM,
+          transcript: plan.transcript?.slice(0, 300) ?? null,
+        },
+      },
+      { status: 200 }
+    );
+  }
+
   return NextResponse.json({
     success: true,
-    received: true,
+    booked: true,
+    data: bookResult.data,
     preview: {
-      transcript: parsed.data.transcript ?? parsed.data.text ?? parsed.data.message ?? null,
-      conversationId: parsed.data.conversationId ?? null,
-      callId: parsed.data.callId ?? null,
+      contactId: typeof body.contactId === "string" ? body.contactId : null,
+      callId: typeof body.id === "string" ? body.id : null,
     },
   });
 }
