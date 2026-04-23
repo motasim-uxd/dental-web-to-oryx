@@ -92,6 +92,7 @@ export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookR
   const normalized = candidates.map((s) => {
     const providerId = Number(s?.providerId);
     const operatoryId = Number(s?.operatoryId);
+    const oralIdFromSlot = Number(s?.oralId);
     const startTime = s?.startTime;
     const endTime = s?.endTime;
     const sh = Number(startTime?.hour);
@@ -101,13 +102,16 @@ export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookR
     return {
       providerId,
       operatoryId,
-      oralId: providerIdToOralId.get(providerId) ?? null,
+      oralId:
+        (Number.isFinite(oralIdFromSlot) ? oralIdFromSlot : null) ??
+        providerIdToOralId.get(providerId) ??
+        null,
       start: { hour: sh, minute: sm, second: 0, millis: 0 },
       end: { hour: eh, minute: em, second: 0, millis: 0 },
     };
   });
 
-  const match = normalized.find(
+  const matches = normalized.filter(
     (x) =>
       x.start.hour === start.hour &&
       x.start.minute === start.minute &&
@@ -115,7 +119,7 @@ export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookR
       Number.isFinite(x.oralId)
   );
 
-  if (!match) {
+  if (!matches.length) {
     return {
       ok: false as const,
       status: 409,
@@ -132,24 +136,52 @@ export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookR
   const dateParts = input.serviceDateISO.split("-").map((n) => Number(n));
   const date = { year: dateParts[0], month: dateParts[1], day: dateParts[2] };
 
-  const result = await client.bookOnlineAppointment({
-    apptType,
-    date,
-    start: match.start,
-    end: match.end,
-    dayOfWeek: getDayOfWeekFromISO(input.serviceDateISO),
-    operatoryId: match.operatoryId,
-    oralId: match.oralId as number,
-    reason: input.reason ?? "Cleaning",
-    notes: input.notes ?? "",
-    firstName: input.firstName,
-    lastName: input.lastName,
-    preferredName: input.preferredName ?? input.firstName,
-    dob: input.dob,
-    email: input.email,
-    phoneNumber: input.phoneNumber,
-    newOrExisting: input.newOrExisting,
-  });
+  const dayOfWeek = getDayOfWeekFromISO(input.serviceDateISO);
+  const reason = input.reason ?? "Cleaning";
+  const notes = input.notes ?? "";
 
-  return { ok: true as const, data: result };
+  // If multiple operatories/providers share the same start time, try each until one books.
+  let lastFailureMessage: string | null = null;
+  for (const m of matches) {
+    const result = await client.bookOnlineAppointment({
+      apptType,
+      date,
+      start: m.start,
+      end: m.end,
+      dayOfWeek,
+      operatoryId: m.operatoryId,
+      oralId: m.oralId as number,
+      reason,
+      notes,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      preferredName: input.preferredName ?? input.firstName,
+      dob: input.dob,
+      email: input.email,
+      phoneNumber: input.phoneNumber,
+      newOrExisting: input.newOrExisting,
+    });
+
+    if (result?.success === true) {
+      return { ok: true as const, data: result };
+    }
+
+    const msg =
+      (typeof result?.message === "string" && result.message.trim()) ||
+      (typeof result?.error === "string" && result.error.trim()) ||
+      null;
+    lastFailureMessage = msg ?? lastFailureMessage;
+  }
+
+  return {
+    ok: false as const,
+    status: 409,
+    error: lastFailureMessage ?? "Slot not available",
+    alternatives: normalized.slice(0, 12).map((x) => ({
+      start: `${String(x.start.hour).padStart(2, "0")}:${String(x.start.minute).padStart(2, "0")}`,
+      end: `${String(x.end.hour).padStart(2, "0")}:${String(x.end.minute).padStart(2, "0")}`,
+      operatoryId: x.operatoryId,
+      providerId: x.providerId,
+    })),
+  };
 }
