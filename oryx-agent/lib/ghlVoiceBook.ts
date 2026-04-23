@@ -27,6 +27,17 @@ function pickNum(obj: Record<string, unknown>, keys: string[]): number | undefin
   return undefined;
 }
 
+function normalizePhone(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  // Keep leading + if present; otherwise digits only.
+  const plus = trimmed.startsWith("+") ? "+" : "";
+  const digits = trimmed.replace(/[^\d]/g, "");
+  if (digits.length < 7) return null;
+  return `${plus}${digits}`;
+}
+
 function parseDobParts(obj: Record<string, unknown>): { year: number; month: number; day: number } | null {
   const y = pickNum(obj, ["dobYear", "birthYear", "oryx_dobYear"]);
   const m = pickNum(obj, ["dobMonth", "birthMonth", "oryx_dobMonth"]);
@@ -161,9 +172,10 @@ export function planOryxBookFromGhlVoiceBody(
   const firstName = pickStr(fields, ["firstName", "first_name", "givenName"]);
   const lastName = pickStr(fields, ["lastName", "last_name", "familyName"]);
   const email = pickStr(fields, ["email", "emailAddress"]);
-  const phoneNumber =
+  const phoneCandidate =
     pickStr(fields, ["phoneNumber", "phone", "mobile", "contactPhone"]) ??
     pickStr(body, ["fromNumber", "phone", "toNumber"]);
+  const phoneNumber = normalizePhone(phoneCandidate);
 
   const dob = parseDobParts(fields);
   const newOrExistingRaw = pickStr(fields, ["newOrExisting", "patientType", "oryx_newOrExisting"]);
@@ -174,15 +186,10 @@ export function planOryxBookFromGhlVoiceBody(
   const reason = pickStr(fields, ["reason", "appointmentReason", "oryx_reason"]);
   const notesField = pickStr(fields, ["notes", "oryx_notes"]);
 
-  if (
-    !serviceDateISO ||
-    !startHHMM ||
-    !firstName ||
-    !lastName ||
-    !email ||
-    !phoneNumber ||
-    !dob
-  ) {
+  const allowMissingPhone =
+    env.GHL_ALLOW_MISSING_PHONE === "1" || env.GHL_ALLOW_MISSING_PHONE === "true";
+
+  if (!serviceDateISO || !startHHMM || !firstName || !lastName || !email || !dob || (!phoneNumber && !allowMissingPhone)) {
     const reasons: string[] = [];
     if (!serviceDateISO) reasons.push("missing_serviceDateISO");
     if (!startHHMM) reasons.push("missing_startHHMM");
@@ -215,7 +222,7 @@ export function planOryxBookFromGhlVoiceBody(
     preferredName,
     dob,
     email,
-    phoneNumber,
+    phoneNumber: phoneNumber ?? "0000000000",
     newOrExisting,
     reason: reason ?? "Cleaning",
     notes: notesExtra || undefined,
