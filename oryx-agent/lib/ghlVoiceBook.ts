@@ -38,6 +38,15 @@ function normalizePhone(raw: string | undefined): string | null {
   return `${plus}${digits}`;
 }
 
+function normalizeYesNo(v: string | undefined): "Yes" | "No" | null {
+  if (!v) return null;
+  const s = v.trim().toLowerCase();
+  if (!s) return null;
+  if (["yes", "y", "true", "1"].includes(s)) return "Yes";
+  if (["no", "n", "false", "0"].includes(s)) return "No";
+  return null;
+}
+
 function parseDobParts(obj: Record<string, unknown>): { year: number; month: number; day: number } | null {
   const y = pickNum(obj, ["dobYear", "birthYear", "oryx_dobYear"]);
   const m = pickNum(obj, ["dobMonth", "birthMonth", "oryx_dobMonth"]);
@@ -186,6 +195,31 @@ export function planOryxBookFromGhlVoiceBody(
   const reason = pickStr(fields, ["reason", "appointmentReason", "oryx_reason"]);
   const notesField = pickStr(fields, ["notes", "oryx_notes"]);
 
+  const hasInsurance =
+    normalizeYesNo(
+      pickStr(fields, [
+        "hasInsurance",
+        "dentalInsurance",
+        "insurance",
+        "hasDentalInsurance",
+        "oryx_hasInsurance",
+      ])
+    ) ?? null;
+  const insuranceCompany = pickStr(fields, [
+    "insuranceCompany",
+    "insuranceCompanyName",
+    "dentalInsuranceCompany",
+    "carrier",
+    "oryx_insuranceCompany",
+  ]);
+  const insuranceMemberId = pickStr(fields, [
+    "insuranceMemberId",
+    "memberId",
+    "subscriberId",
+    "policyNumber",
+    "oryx_insuranceMemberId",
+  ]);
+
   const allowMissingPhone =
     env.GHL_ALLOW_MISSING_PHONE === "1" || env.GHL_ALLOW_MISSING_PHONE === "true";
 
@@ -208,7 +242,18 @@ export function planOryxBookFromGhlVoiceBody(
     return { mode: "skip", transcript, reasons: ["invalid_startHHMM"] };
   }
 
-  const notesExtra = [summary && `GHL summary: ${summary}`, notesField, transcript && `Transcript:\n${transcript}`]
+  const insuranceLines: string[] = [];
+  if (hasInsurance) insuranceLines.push(`Dental insurance: ${hasInsurance}`);
+  if (insuranceCompany) insuranceLines.push(`Insurance company: ${insuranceCompany}`);
+  if (insuranceMemberId) insuranceLines.push(`Member ID: ${insuranceMemberId}`);
+  const insuranceBlock = insuranceLines.length ? insuranceLines.join("\n") : null;
+
+  const notesExtra = [
+    summary && `GHL summary: ${summary}`,
+    notesField,
+    insuranceBlock,
+    transcript && `Transcript:\n${transcript}`,
+  ]
     .filter(Boolean)
     .join("\n\n");
 
