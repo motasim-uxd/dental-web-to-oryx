@@ -108,6 +108,10 @@ export type VoiceToOryxPlan =
   | { mode: "book"; input: GhlBookInput; transcript: string | null }
   | { mode: "skip"; transcript: string | null; reasons: string[] };
 
+export type VoiceToOryxPlanMany =
+  | { mode: "many"; plans: VoiceToOryxPlan[]; transcript: string | null }
+  | VoiceToOryxPlan;
+
 /**
  * Build an Oryx booking plan from a GHL Voice AI / workflow JSON body.
  *
@@ -218,4 +222,40 @@ export function planOryxBookFromGhlVoiceBody(
   };
 
   return { mode: "book", input, transcript };
+}
+
+/**
+ * Multi-child helper: if the payload includes an array of patient objects, build
+ * one plan per patient by merging each patient object into `customData`.
+ *
+ * Supported array keys (any one):
+ * - `patients`
+ * - `children`
+ * - `appointments`
+ */
+export function planOryxBooksFromGhlVoiceBody(
+  body: Record<string, unknown>,
+  env: NodeJS.ProcessEnv
+): VoiceToOryxPlanMany {
+  const transcript = getTranscript(body);
+  const patientsRaw =
+    (body.patients as unknown) ??
+    (body.children as unknown) ??
+    (body.appointments as unknown);
+
+  if (!Array.isArray(patientsRaw)) {
+    return planOryxBookFromGhlVoiceBody(body, env);
+  }
+
+  const baseCustom = asRecord(body.customData);
+  const plans = patientsRaw.map((p) => {
+    const patientObj = asRecord(p);
+    const merged: Record<string, unknown> = {
+      ...body,
+      customData: { ...baseCustom, ...patientObj },
+    };
+    return planOryxBookFromGhlVoiceBody(merged, env);
+  });
+
+  return { mode: "many", plans, transcript };
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { bookCleaningFromGhl } from "@/lib/ghlBooking";
-import { planOryxBookFromGhlVoiceBody } from "@/lib/ghlVoiceBook";
+import { planOryxBooksFromGhlVoiceBody } from "@/lib/ghlVoiceBook";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -52,6 +52,10 @@ const BodySchema = z
     oryx: z.record(z.string(), z.unknown()).optional(),
     book: z.record(z.string(), z.unknown()).optional(),
     customData: z.record(z.string(), z.unknown()).optional(),
+    // Optional multi-child payload (each element is a patient object with booking fields).
+    patients: z.array(z.record(z.string(), z.unknown())).optional(),
+    children: z.array(z.record(z.string(), z.unknown())).optional(),
+    appointments: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .passthrough();
 
@@ -83,7 +87,42 @@ export async function POST(req: Request) {
   }
 
   const body = parsed.data as Record<string, unknown>;
-  const plan = planOryxBookFromGhlVoiceBody(body, process.env);
+  const plan = planOryxBooksFromGhlVoiceBody(body, process.env);
+
+  if (plan.mode === "many") {
+    const results = [];
+    for (let i = 0; i < plan.plans.length; i++) {
+      const p = plan.plans[i];
+      if (p.mode === "skip") {
+        results.push({ index: i + 1, booked: false, reasons: p.reasons });
+        continue;
+      }
+
+      const bookResult = await bookCleaningFromGhl(p.input);
+      if (!bookResult.ok) {
+        results.push({
+          index: i + 1,
+          booked: false,
+          error: bookResult.error,
+          alternatives: bookResult.status === 409 ? bookResult.alternatives : undefined,
+          preview: { serviceDateISO: p.input.serviceDateISO, startHHMM: p.input.startHHMM },
+        });
+        continue;
+      }
+
+      results.push({ index: i + 1, booked: true, data: bookResult.data });
+    }
+
+    return NextResponse.json({
+      success: true,
+      booked: results.every((r: any) => r.booked === true),
+      results,
+      preview: {
+        contactId: typeof body.contactId === "string" ? body.contactId : null,
+        callId: typeof body.id === "string" ? body.id : null,
+      },
+    });
+  }
 
   if (plan.mode === "skip") {
     return NextResponse.json({
