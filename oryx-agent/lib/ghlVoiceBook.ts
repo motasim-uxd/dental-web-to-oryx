@@ -56,10 +56,12 @@ function parseDobParts(obj: Record<string, unknown>): { year: number; month: num
   }
   const iso = pickStr(obj, ["dob", "dobISO", "dateOfBirth", "birthday", "oryx_dob"]);
   if (iso) {
-    const m2 = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m2) {
-      return { year: Number(m2[1]), month: Number(m2[2]), day: Number(m2[3]) };
-    }
+    // YYYY-MM-DD
+    const mIso = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (mIso) return { year: Number(mIso[1]), month: Number(mIso[2]), day: Number(mIso[3]) };
+    // MM-DD-YYYY
+    const mMdy = iso.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (mMdy) return { year: Number(mMdy[3]), month: Number(mMdy[1]), day: Number(mMdy[2]) };
   }
   return null;
 }
@@ -236,9 +238,11 @@ export function planOryxBookFromGhlVoiceBody(
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(serviceDateISO)) {
-    return { mode: "skip", transcript, reasons: ["invalid_serviceDateISO"] };
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(serviceDateISO)) {
+      return { mode: "skip", transcript, reasons: ["invalid_serviceDateISO"] };
+    }
   }
-  if (!/^\d{1,2}:\d{2}$/.test(startHHMM)) {
+  if (!/^\d{1,2}:\d{2}$/.test(startHHMM) && !/^\d{1,2}(:\d{2})?\s*[aApP][mM]$/.test(startHHMM)) {
     return { mode: "skip", transcript, reasons: ["invalid_startHHMM"] };
   }
 

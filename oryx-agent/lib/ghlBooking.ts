@@ -3,9 +3,12 @@ import { OryxClient, type OryxApptType, type OryxRealm } from "@/lib/oryxClient"
 export type GhlBookInput = {
   realm: OryxRealm;
   apptType: OryxApptType;
-  /** YYYY-MM-DD */
+  /** YYYY-MM-DD (preferred). Also accepts MM-DD-YYYY and converts. */
   serviceDateISO: string;
-  /** 24h HH:MM */
+  /**
+   * Preferred: 24h HH:MM.
+   * Also accepts 12h like "1 PM", "1:00 pm", "01:00 PM".
+   */
   startHHMM: string;
   firstName: string;
   lastName: string;
@@ -19,13 +22,47 @@ export type GhlBookInput = {
 };
 
 function parseHHMM(hhmm: string): { hour: number; minute: number } | null {
-  const m = hhmm.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  const hour = Number(m[1]);
-  const minute = Number(m[2]);
-  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  return { hour, minute };
+  const s = hhmm.trim();
+
+  // 24h HH:MM
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    const hour = Number(m24[1]);
+    const minute = Number(m24[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return { hour, minute };
+  }
+
+  // 12h "h(:mm)? am/pm"
+  const m12 = s.match(/^(\d{1,2})(?::(\d{2}))?\s*([aApP][mM])$/);
+  if (m12) {
+    let hour = Number(m12[1]);
+    const minute = m12[2] == null ? 0 : Number(m12[2]);
+    const ampm = m12[3].toLowerCase();
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+    if (hour < 1 || hour > 12 || minute < 0 || minute > 59) return null;
+    if (ampm === "am") {
+      if (hour === 12) hour = 0;
+    } else {
+      if (hour !== 12) hour += 12;
+    }
+    return { hour, minute };
+  }
+
+  // 12h "h" without am/pm is ambiguous -> reject
+  return null;
+}
+
+function normalizeDateISO(input: string): string | null {
+  const s = input.trim();
+  // YYYY-MM-DD
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // MM-DD-YYYY
+  const mdy = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (mdy) return `${mdy[3]}-${mdy[1]}-${mdy[2]}`;
+  return null;
 }
 
 function getDayOfWeekFromISO(iso: string) {
@@ -62,9 +99,18 @@ export type GhlBookResult =
   | { ok: true; data: unknown };
 
 export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookResult> {
+  const dateISO = normalizeDateISO(input.serviceDateISO);
+  if (!dateISO) {
+    return { ok: false as const, status: 400, error: "Invalid serviceDateISO (expected YYYY-MM-DD or MM-DD-YYYY)" };
+  }
+
   const start = parseHHMM(input.startHHMM);
   if (!start) {
-    return { ok: false as const, status: 400, error: "Invalid startHHMM (expected HH:MM 24h)" };
+    return {
+      ok: false as const,
+      status: 400,
+      error: "Invalid startHHMM (expected HH:MM 24h or 12h like '1:00 PM')",
+    };
   }
 
   const client = new OryxClient({ realm: input.realm });
@@ -84,7 +130,7 @@ export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookR
 
   const slots = await client.getScheduleForDate({
     apptType,
-    dateISO: input.serviceDateISO,
+    dateISO,
     firstAvail: true,
   });
 
@@ -133,10 +179,10 @@ export async function bookCleaningFromGhl(input: GhlBookInput): Promise<GhlBookR
     };
   }
 
-  const dateParts = input.serviceDateISO.split("-").map((n) => Number(n));
+  const dateParts = dateISO.split("-").map((n) => Number(n));
   const date = { year: dateParts[0], month: dateParts[1], day: dateParts[2] };
 
-  const dayOfWeek = getDayOfWeekFromISO(input.serviceDateISO);
+  const dayOfWeek = getDayOfWeekFromISO(dateISO);
   const reason = input.reason ?? "Cleaning";
   const notes = input.notes ?? "";
 
