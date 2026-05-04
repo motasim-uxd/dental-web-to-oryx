@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PhoneInput } from "react-international-phone";
 
 type ServiceType = "Emergency" | "Cleaning" | "Consultation" | "Treatment";
 type YesNo = "Yes" | "No";
@@ -481,8 +482,8 @@ export default function BookPage() {
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Date of birth (YYYY-MM-DD)
-          <input value={dobISO} onChange={(e) => setDobISO(e.target.value)} disabled={busy} placeholder="2018-05-14" />
+          Date of birth
+          <input type="date" value={dobISO} onChange={(e) => setDobISO(e.target.value)} disabled={busy} />
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -492,7 +493,20 @@ export default function BookPage() {
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           Phone number
-          <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} disabled={busy} placeholder="+1 717-884-8807" />
+          <PhoneInput
+            defaultCountry="us"
+            value={phoneNumber}
+            onChange={setPhoneNumber}
+            disabled={busy}
+            inputStyle={{
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              background: "transparent",
+              color: "inherit",
+            }}
+          />
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -503,25 +517,29 @@ export default function BookPage() {
           </select>
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Insurance company name
-          <input
-            value={insuranceCompany}
-            onChange={(e) => setInsuranceCompany(e.target.value)}
-            disabled={busy || hasInsurance !== "Yes"}
-            placeholder="e.g., Aetna"
-          />
-        </label>
+        {hasInsurance === "Yes" && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            Insurance company name
+            <input
+              value={insuranceCompany}
+              onChange={(e) => setInsuranceCompany(e.target.value)}
+              disabled={busy}
+              placeholder="e.g., Aetna"
+            />
+          </label>
+        )}
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Member ID
-          <input
-            value={insuranceMemberId}
-            onChange={(e) => setInsuranceMemberId(e.target.value)}
-            disabled={busy || hasInsurance !== "Yes"}
-            placeholder="e.g., 123456789"
-          />
-        </label>
+        {hasInsurance === "Yes" && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            Member ID
+            <input
+              value={insuranceMemberId}
+              onChange={(e) => setInsuranceMemberId(e.target.value)}
+              disabled={busy}
+              placeholder="e.g., 123456789"
+            />
+          </label>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           Any special healthcare needs?

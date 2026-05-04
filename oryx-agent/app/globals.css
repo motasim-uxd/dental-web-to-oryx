@@ -31,6 +31,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Phone input (web form) */
+@import "react-international-phone/style.css";
+
 * {
   box-sizing: border-box;
   padding: 0;
