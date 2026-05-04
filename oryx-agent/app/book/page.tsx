@@ -119,6 +119,7 @@ export default function BookPage() {
         `/api/availability?date=${encodeURIComponent(serviceDateISO)}&apptType=${encodeURIComponent(
           serviceType
         )}&firstAvail=true`
+        , { cache: "no-store" }
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
@@ -145,12 +146,26 @@ export default function BookPage() {
             })
         : [];
 
-      setSlots(options.slice(0, 20));
+      // Don't show the currently selected slot again.
+      const filtered =
+        selectedSlot == null
+          ? options
+          : options.filter(
+              (s) =>
+                !(
+                  s.operatoryId === selectedSlot.operatoryId &&
+                  s.oralId === selectedSlot.oralId &&
+                  s.start.hour === selectedSlot.start.hour &&
+                  s.start.minute === selectedSlot.start.minute
+                )
+            );
+
+      setSlots(filtered.slice(0, 20));
       if (!options.length) {
         setAvailabilityMsg("");
         setErr("No openings found for that date.");
       } else {
-        setAvailabilityMsg(`Loaded ${Math.min(options.length, 20)} time options.`);
+        setAvailabilityMsg(`Loaded ${Math.min(filtered.length, 20)} time options.`);
       }
     } catch (e: any) {
       setAvailabilityMsg("");
@@ -375,15 +390,17 @@ export default function BookPage() {
           </select>
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Special needs details
-          <input
-            value={specialNeedsDetails}
-            onChange={(e) => setSpecialNeedsDetails(e.target.value)}
-            disabled={busy || specialNeeds !== "Yes"}
-            placeholder="Optional"
-          />
-        </label>
+        {specialNeeds === "Yes" && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            Special needs details
+            <input
+              value={specialNeedsDetails}
+              onChange={(e) => setSpecialNeedsDetails(e.target.value)}
+              disabled={busy}
+              placeholder="Optional"
+            />
+          </label>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: "1 / -1" }}>
           Notes (optional)
