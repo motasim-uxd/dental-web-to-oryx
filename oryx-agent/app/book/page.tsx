@@ -334,6 +334,38 @@ export default function BookPage() {
           </select>
         </label>
 
+        {slots.length > 0 && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ color: "#555", fontSize: 13, marginBottom: 8 }}>
+              If your device doesn’t show dropdown options, select a time here:
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {slots.map((s) => {
+                const key = `${s.operatoryId}|${s.oralId}|${s.start.hour}|${s.start.minute}`;
+                const active = slotKey === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSlotKey(key)}
+                    disabled={busy}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: active ? "2px solid #111" : "1px solid #ddd",
+                      background: active ? "#111" : "#fff",
+                      color: active ? "#fff" : "#111",
+                      cursor: busy ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           Full name
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} disabled={busy} placeholder="First Last" />
