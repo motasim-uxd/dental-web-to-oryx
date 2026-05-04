@@ -93,6 +93,7 @@ export default function BookPage() {
   const [serviceDateISO, setServiceDateISO] = useState("");
   const [slots, setSlots] = useState<SlotOption[]>([]);
   const [slotKey, setSlotKey] = useState<string>("");
+  const [availabilityMsg, setAvailabilityMsg] = useState<string>("");
 
   const [fullName, setFullName] = useState("");
   const [dobISO, setDobISO] = useState("");
@@ -130,11 +131,13 @@ export default function BookPage() {
     setOkMsg(null);
     setSlots([]);
     setSlotKey("");
+    setAvailabilityMsg("");
     if (!serviceDateISO) {
       setErr("Please select a date.");
       return;
     }
     setBusy(true);
+    setAvailabilityMsg("Loading available times…");
     try {
       const res = await fetch(
         `/api/availability?date=${encodeURIComponent(serviceDateISO)}&apptType=${encodeURIComponent(
@@ -144,6 +147,7 @@ export default function BookPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         setErr("Could not load availability. Try another date.");
+        setAvailabilityMsg("");
         return;
       }
       const options: SlotOption[] = Array.isArray(json.data)
@@ -166,7 +170,15 @@ export default function BookPage() {
         : [];
 
       setSlots(options.slice(0, 20));
-      if (!options.length) setErr("No openings found for that date.");
+      if (!options.length) {
+        setAvailabilityMsg("");
+        setErr("No openings found for that date.");
+      } else {
+        setAvailabilityMsg(`Loaded ${Math.min(options.length, 20)} time options.`);
+      }
+    } catch (e: any) {
+      setAvailabilityMsg("");
+      setErr(`Availability request failed: ${e?.message ?? "unknown error"}`);
     } finally {
       setBusy(false);
     }
@@ -318,6 +330,9 @@ export default function BookPage() {
           >
             Load available times
           </button>
+          {availabilityMsg && (
+            <span style={{ color: "#666", fontSize: 13 }}>{availabilityMsg}</span>
+          )}
         </div>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: "1 / -1" }}>
