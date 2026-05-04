@@ -14,6 +14,10 @@ type SlotOption = {
   end: { hour: number; minute: number };
 };
 
+function slotKeyOf(s: { operatoryId: number; oralId: number; start: { hour: number; minute: number } }) {
+  return `${s.operatoryId}|${s.oralId}|${s.start.hour}|${s.start.minute}`;
+}
+
 function splitFullName(input: string): { firstName: string; lastName: string } | null {
   const parts = input.trim().split(/\s+/).filter(Boolean);
   if (parts.length < 2) return null;
@@ -102,6 +106,17 @@ export default function BookPage() {
     ) ?? null;
   }, [slotKey, slots]);
 
+  const groupedSlots = useMemo(() => {
+    const groups = new Map<string, { operatoryId: number; oralId: number; items: SlotOption[] }>();
+    for (const s of slots) {
+      const k = `${s.operatoryId}|${s.oralId}`;
+      const g = groups.get(k) ?? { operatoryId: s.operatoryId, oralId: s.oralId, items: [] };
+      g.items.push(s);
+      groups.set(k, g);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.operatoryId - b.operatoryId);
+  }, [slots]);
+
   async function loadAvailability() {
     setErr(null);
     setOkMsg(null);
@@ -160,12 +175,13 @@ export default function BookPage() {
                 )
             );
 
-      setSlots(filtered.slice(0, 20));
+      // Keep a reasonable amount, but preserve room separation.
+      setSlots(filtered.slice(0, 120));
       if (!options.length) {
         setAvailabilityMsg("");
         setErr("No openings found for that date.");
       } else {
-        setAvailabilityMsg(`Loaded ${Math.min(filtered.length, 20)} time options.`);
+        setAvailabilityMsg(`Loaded ${Math.min(filtered.length, 120)} time options.`);
       }
     } catch (e: any) {
       setAvailabilityMsg("");
@@ -327,8 +343,8 @@ export default function BookPage() {
           <select value={slotKey} onChange={(e) => setSlotKey(e.target.value)} disabled={busy || slots.length === 0}>
             <option value="">Select a time</option>
             {slots.map((s) => (
-              <option key={`${s.operatoryId}|${s.oralId}|${s.start.hour}|${s.start.minute}`} value={`${s.operatoryId}|${s.oralId}|${s.start.hour}|${s.start.minute}`}>
-                {s.label}
+              <option key={slotKeyOf(s)} value={slotKeyOf(s)}>
+                {`OP${s.operatoryId} — ${s.label}`}
               </option>
             ))}
           </select>
@@ -337,31 +353,40 @@ export default function BookPage() {
         {slots.length > 0 && (
           <div style={{ gridColumn: "1 / -1" }}>
             <div style={{ color: "#555", fontSize: 13, marginBottom: 8 }}>
-              If your device doesn’t show dropdown options, select a time here:
+              Select a room + time:
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {slots.map((s) => {
-                const key = `${s.operatoryId}|${s.oralId}|${s.start.hour}|${s.start.minute}`;
-                const active = slotKey === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSlotKey(key)}
-                    disabled={busy}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      border: active ? "2px solid #111" : "1px solid #ddd",
-                      background: active ? "#111" : "#fff",
-                      color: active ? "#fff" : "#111",
-                      cursor: busy ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                );
-              })}
+            <div style={{ display: "grid", gap: 14 }}>
+              {groupedSlots.map((g) => (
+                <div key={`${g.operatoryId}|${g.oralId}`}>
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                    {`OP${g.operatoryId}`}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {g.items.map((s) => {
+                      const key = slotKeyOf(s);
+                      const active = slotKey === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setSlotKey(key)}
+                          disabled={busy}
+                          style={{
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: active ? "2px solid #111" : "1px solid #ddd",
+                            background: active ? "#111" : "#fff",
+                            color: active ? "#fff" : "#111",
+                            cursor: busy ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
