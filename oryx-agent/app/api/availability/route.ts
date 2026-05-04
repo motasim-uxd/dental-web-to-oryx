@@ -5,6 +5,29 @@ import { AvailabilityQuerySchema } from "@/lib/schemas";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+function timingSafeEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
+function assertWebPreviewCode(req: Request): { ok: true } | { ok: false; status: number; error: string } {
+  const expected = process.env.WEB_FORM_PREVIEW_CODE;
+  if (!expected) return { ok: true };
+
+  const url = new URL(req.url);
+  const provided =
+    (req.headers.get("x-preview-code") ?? "").trim() ||
+    (url.searchParams.get("code") ?? "").trim();
+
+  if (!provided || !timingSafeEqual(provided, expected)) {
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
+
+  return { ok: true };
+}
+
 function getDayOfWeekFromISO(iso: string) {
   const d = new Date(`${iso}T00:00:00`);
   // JS: 0=Sun..6=Sat
@@ -12,6 +35,11 @@ function getDayOfWeekFromISO(iso: string) {
 }
 
 export async function GET(req: Request) {
+  const auth = assertWebPreviewCode(req);
+  if (!auth.ok) {
+    return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
+  }
+
   const url = new URL(req.url);
   const parsed = AvailabilityQuerySchema.safeParse({
     date: url.searchParams.get("date") ?? "",

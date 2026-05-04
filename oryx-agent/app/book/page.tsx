@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type ServiceType = "Emergency" | "Cleaning" | "Consultation" | "Treatment";
 type YesNo = "Yes" | "No";
@@ -68,6 +68,9 @@ function buildNotes(params: {
 }
 
 export default function BookPage() {
+  const [previewCode, setPreviewCode] = useState("");
+  const [previewCodeReady, setPreviewCodeReady] = useState(false);
+
   const [serviceType, setServiceType] = useState<ServiceType>("Cleaning");
   const [serviceDateISO, setServiceDateISO] = useState("");
   const [slots, setSlots] = useState<SlotOption[]>([]);
@@ -93,6 +96,19 @@ export default function BookPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const fromQuery = (url.searchParams.get("code") ?? "").trim();
+    const stored = (window.sessionStorage.getItem("previewCode") ?? "").trim();
+    const c = fromQuery || stored;
+    if (c) {
+      setPreviewCode(c);
+      setPreviewCodeReady(true);
+      if (fromQuery) window.sessionStorage.setItem("previewCode", fromQuery);
+    }
+  }, []);
 
   const selectedSlot = useMemo(() => {
     const [operatoryId, oralId, sh, sm] = slotKey.split("|").map((v) => Number(v));
@@ -123,6 +139,10 @@ export default function BookPage() {
     setSlots([]);
     setSlotKey("");
     setAvailabilityMsg("");
+    if (!previewCodeReady) {
+      setErr("Enter the preview access code to continue.");
+      return;
+    }
     if (!serviceDateISO) {
       setErr("Please select a date.");
       return;
@@ -130,10 +150,11 @@ export default function BookPage() {
     setBusy(true);
     setAvailabilityMsg("Loading available times…");
     try {
+      const codeParam = encodeURIComponent(previewCode.trim());
       const res = await fetch(
         `/api/availability?date=${encodeURIComponent(serviceDateISO)}&apptType=${encodeURIComponent(
           serviceType
-        )}&firstAvail=true`
+        )}&firstAvail=true&code=${codeParam}`
         , { cache: "no-store" }
       );
       const json = await res.json().catch(() => null);
@@ -195,6 +216,10 @@ export default function BookPage() {
     setErr(null);
     setOkMsg(null);
 
+    if (!previewCodeReady) {
+      setErr("Enter the preview access code to continue.");
+      return;
+    }
     const name = splitFullName(fullName);
     if (!name) {
       setErr("Please enter a full name (first and last).");
@@ -263,7 +288,7 @@ export default function BookPage() {
     try {
       const res = await fetch("/api/web/book", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "x-preview-code": previewCode.trim() },
         body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => null);
@@ -283,6 +308,50 @@ export default function BookPage() {
       <p style={{ marginTop: 0, color: "#555" }}>
         Submit an online appointment request. A team member will review and confirm.
       </p>
+
+      {!previewCodeReady && (
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #e5e5e5",
+            background: "#fff",
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Preview access code</div>
+          <div style={{ color: "#666", fontSize: 13, marginBottom: 10 }}>
+            This form is in preview mode. Enter the access code provided by Smile Squad.
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <input
+              value={previewCode}
+              onChange={(e) => setPreviewCode(e.target.value)}
+              placeholder="Access code"
+              style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: "1px solid #ddd" }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const c = previewCode.trim();
+                if (!c) return;
+                window.sessionStorage.setItem("previewCode", c);
+                setPreviewCodeReady(true);
+              }}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #111",
+                background: "#111",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
 
       {err && (
         <div style={{ padding: 12, borderRadius: 12, background: "#ffecec", color: "#7a0000", marginBottom: 12 }}>
