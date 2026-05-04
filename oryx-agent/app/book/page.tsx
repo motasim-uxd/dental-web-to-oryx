@@ -25,67 +25,42 @@ function isoToOryxDate(iso: string) {
   return { year: y, month: m, day: d };
 }
 
-function parseInsuranceDetails(detailsRaw: string | null | undefined): {
-  insuranceCompany?: string;
-  insuranceMemberId?: string;
-  insuranceDetailsRaw?: string;
-} {
-  const s = String(detailsRaw ?? "").trim();
-  if (!s) return {};
-
-  // Try to extract something that looks like an ID (letters/digits, 4+ chars).
-  // Examples:
-  // - "Aetna 123456789"
-  // - "Aetna, Member ID: ABC-1234"
-  const idMatch = s.match(/(?:member\s*id|id)\s*[:#]?\s*([a-zA-Z0-9-]{4,})/i);
-  const bareIdMatch = s.match(/\b([a-zA-Z0-9-]{6,})\b/); // fallback
-
-  const insuranceMemberId = (idMatch?.[1] ?? bareIdMatch?.[1] ?? "").trim() || undefined;
-  let insuranceCompany = s;
-  if (insuranceMemberId) {
-    insuranceCompany = s
-      .replace(idMatch?.[0] ?? insuranceMemberId, "")
-      .replace(/[,\-–—]+/g, " ")
-      .trim();
-  }
-
-  if (!insuranceCompany) insuranceCompany = undefined as any;
-
-  return {
-    insuranceCompany: insuranceCompany || undefined,
-    insuranceMemberId,
-    insuranceDetailsRaw: s,
-  };
-}
-
 function buildNotes(params: {
   serviceType: ServiceType;
   insurance: YesNo;
   insuranceCompany?: string;
   insuranceMemberId?: string;
-  insuranceDetailsRaw?: string;
   specialHealthcareNeeds: YesNo;
   specialHealthcareNeedsDetails?: string;
   notes?: string;
 }) {
-  const lines: string[] = [];
-  lines.push(`Service: ${params.serviceType}`);
-  lines.push(`Insurance: ${params.insurance}`);
+  const details: string[] = [];
+
+  const insuranceSummary =
+    params.insurance === "Yes"
+      ? `Insurance: Yes${params.insuranceCompany ? ` (${params.insuranceCompany})` : ""}${
+          params.insuranceMemberId ? `, ID: ${params.insuranceMemberId}` : ""
+        }`
+      : "Insurance: No";
+
+  const needsSummary =
+    params.specialHealthcareNeeds === "Yes" ? "Special needs: Yes" : "Special needs: No";
+
+  // First line is what commonly shows in tooltip/list views; keep it compact.
+  details.push(`Service: ${params.serviceType} | ${insuranceSummary} | ${needsSummary}`);
+
   if (params.insurance === "Yes") {
-    if (params.insuranceCompany) lines.push(`Insurance company: ${params.insuranceCompany}`);
-    if (params.insuranceMemberId) lines.push(`Insurance member ID: ${params.insuranceMemberId}`);
-    if (!params.insuranceCompany && !params.insuranceMemberId && params.insuranceDetailsRaw) {
-      lines.push(`Insurance details (raw): ${params.insuranceDetailsRaw}`);
-    }
+    if (params.insuranceCompany) details.push(`Insurance company: ${params.insuranceCompany}`);
+    if (params.insuranceMemberId) details.push(`Insurance member ID: ${params.insuranceMemberId}`);
   }
 
-  lines.push(`Special healthcare needs: ${params.specialHealthcareNeeds}`);
+  details.push(`Special healthcare needs: ${params.specialHealthcareNeeds}`);
   if (params.specialHealthcareNeeds === "Yes" && params.specialHealthcareNeedsDetails) {
-    lines.push(`Special healthcare needs details: ${params.specialHealthcareNeedsDetails}`);
+    details.push(`Special healthcare needs details: ${params.specialHealthcareNeedsDetails}`);
   }
 
-  if (params.notes && params.notes.trim()) lines.push(`Other notes: ${params.notes.trim()}`);
-  return lines.join("\n");
+  if (params.notes && params.notes.trim()) details.push(`Other notes: ${params.notes.trim()}`);
+  return details.join("\n");
 }
 
 export default function BookPage() {
@@ -103,7 +78,8 @@ export default function BookPage() {
   const [newOrExisting, setNewOrExisting] = useState<"new" | "existing">("new");
 
   const [hasInsurance, setHasInsurance] = useState<YesNo>("No");
-  const [insuranceDetails, setInsuranceDetails] = useState("");
+  const [insuranceCompany, setInsuranceCompany] = useState("");
+  const [insuranceMemberId, setInsuranceMemberId] = useState("");
 
   const [specialNeeds, setSpecialNeeds] = useState<YesNo>("No");
   const [specialNeedsDetails, setSpecialNeedsDetails] = useState("");
@@ -214,26 +190,22 @@ export default function BookPage() {
       setNewOrExisting("existing");
     }
 
-    const insuranceParsed =
-      hasInsurance === "Yes" ? parseInsuranceDetails(insuranceDetails) : {};
-
     const payload = {
       apptType: serviceType,
       reason: serviceType,
       notes: buildNotes({
         serviceType,
         insurance: hasInsurance,
-        insuranceCompany: insuranceParsed.insuranceCompany,
-        insuranceMemberId: insuranceParsed.insuranceMemberId,
-        insuranceDetailsRaw: insuranceParsed.insuranceDetailsRaw,
+        insuranceCompany: hasInsurance === "Yes" ? insuranceCompany.trim() : undefined,
+        insuranceMemberId: hasInsurance === "Yes" ? insuranceMemberId.trim() : undefined,
         specialHealthcareNeeds: specialNeeds,
         specialHealthcareNeedsDetails: specialNeeds === "Yes" ? specialNeedsDetails : undefined,
         notes,
       }),
 
       insurance: hasInsurance,
-      insuranceCompany: insuranceParsed.insuranceCompany,
-      insuranceMemberId: insuranceParsed.insuranceMemberId,
+      insuranceCompany: hasInsurance === "Yes" ? insuranceCompany.trim() : undefined,
+      insuranceMemberId: hasInsurance === "Yes" ? insuranceMemberId.trim() : undefined,
       specialHealthcareNeeds: specialNeeds,
       specialHealthcareNeedsDetails: specialNeeds === "Yes" ? specialNeedsDetails : undefined,
 
@@ -376,12 +348,22 @@ export default function BookPage() {
         </label>
 
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          Insurance details (company + member ID)
+          Insurance company name
           <input
-            value={insuranceDetails}
-            onChange={(e) => setInsuranceDetails(e.target.value)}
+            value={insuranceCompany}
+            onChange={(e) => setInsuranceCompany(e.target.value)}
             disabled={busy || hasInsurance !== "Yes"}
-            placeholder="e.g., Aetna 123456789"
+            placeholder="e.g., Aetna"
+          />
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          Member ID
+          <input
+            value={insuranceMemberId}
+            onChange={(e) => setInsuranceMemberId(e.target.value)}
+            disabled={busy || hasInsurance !== "Yes"}
+            placeholder="e.g., 123456789"
           />
         </label>
 
