@@ -14,6 +14,19 @@ type SlotOption = {
   end: { hour: number; minute: number };
 };
 
+function fmt12(t: { hour: number; minute: number }) {
+  const h24 = Number(t.hour);
+  const m = Number(t.minute);
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  let h12 = h24 % 12;
+  if (h12 === 0) h12 = 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function fmtRange12(s: { start: { hour: number; minute: number }; end: { hour: number; minute: number } }) {
+  return `${fmt12(s.start)} - ${fmt12(s.end)}`;
+}
+
 function slotKeyOf(s: { operatoryId: number; oralId: number; start: { hour: number; minute: number } }) {
   return `${s.operatoryId}|${s.oralId}|${s.start.hour}|${s.start.minute}`;
 }
@@ -171,13 +184,15 @@ export default function BookPage() {
               const sm = Number(x?.start?.minute);
               const eh = Number(x?.end?.hour);
               const em = Number(x?.end?.minute);
+              const start = { hour: sh, minute: sm };
+              const end = { hour: eh, minute: em };
               return {
-                label: `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")} - ${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`,
+                label: fmtRange12({ start, end }),
                 operatoryId: Number(x.operatoryId),
                 oralId: Number(x.oralId),
                 dayOfWeek: Number(x.dayOfWeek),
-                start: { hour: sh, minute: sm },
-                end: { hour: eh, minute: em },
+                start,
+                end,
               };
             })
         : [];
